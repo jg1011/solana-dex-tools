@@ -1,0 +1,27 @@
+[package]
+name = "solana_dex_tools"
+description = "A high-performance, thread-safe Rust library for interacting with Solana decentralized exchanges (DEXs), optimized for high-frequency trading (HFT) applications."
+version = "1.0.0"
+authors = ["Jacob Green", "Luke Crawford"]
+rust-version = "1.88" # Latest Stable as of 18/08/25
+edition = "2021"
+license = "MIT"
+keywords = ["solana", "dex", "hft", "trading", "blockchain", "orca"]
+categories = ["cryptography::cryptocurrencies", "network-programming", "concurrency-tools"]
+
+[lib]
+name = "solana_dex_tools"
+path = "src/lib.rs"
+
+[dependencies]
+solana-sdk = ">=1.16, < 3.0" 
+solana-client = ">=1.16, < 3.0" 
+solana-program = ">=1.16, < 3.0"
+spl-token = { version = "=4.0.3", features = ["no-entrypoint"] }
+orca_whirlpools_client = "=4.0.0"
+orca_whirlpools_core = "=2.0.0"
+anyhow = "1.0.86" # latest stable as of 18/08/25
+num-integer = "=0.1.46" # Latest stable as of 24/08/2025 
+arc-swap = "1.7.1"
+async-trait = "0.1.77"
+dashmap = "5.5.3"
