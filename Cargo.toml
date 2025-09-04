@@ -8,7 +8,7 @@ authors = ["Jacob Green", "Luke Crawford"]
 rust-version = "1.88" # Latest Stable as of 18/08/25
 edition = "2021"
 license = "MIT"
-keywords = ["solana", "dex", "hft", "trading", "blockchain", "orca"]
+keywords = ["solana", "dex", "hft", "trading", "blockchain"]
 categories = ["cryptography::cryptocurrencies", "network-programming", "concurrency-tools"]
 
 [lib]
