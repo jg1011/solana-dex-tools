@@ -1,7 +1,7 @@
+use crate::common::rpc::RpcProvider;
 use crate::common::state::AccountState;
 use crate::common::types::AnyResult;
 use async_trait::async_trait;
-use solana_client::rpc_client::RpcClient;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -29,8 +29,5 @@ pub trait Pool: Send + Sync {
     /// Any implementation of this method should be highly optimized, fetching 
     /// all required account data in a minimum number of RPC calls and invoking the 
     /// update method on each respective `AccountState` object.
-    /// 
-    /// We recommend using the RpcClient::get_multiple_accounts method to fetch all required 
-    /// account data, which works for up to 100 accounts at a time, on implementation.
-    async fn refresh(&self, rpc_client: &RpcClient) -> AnyResult<()>;
+    async fn refresh<C: RpcProvider + Send + Sync>(&self, rpc_client: &C) -> AnyResult<()>;
 }

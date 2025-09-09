@@ -3,7 +3,7 @@ name = "solana_dex_tools"
 description = "A high-performance, thread-safe Rust library for interacting with Solana decentralized exchanges (DEXs), optimized for high-frequency trading (HFT) applications."
 readme = "README.md" 
 repository = "https://github.com/jg1011/solana-dex-tools"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["Jacob Green", "Luke Crawford"]
 rust-version = "1.88" # Latest Stable as of 18/08/25
 edition = "2021"
@@ -16,8 +16,8 @@ name = "solana_dex_tools"
 path = "src/lib.rs"
 
 [dependencies]
-solana-sdk = ">=1.16, < 3.0" 
-solana-client = ">=1.16, < 3.0" 
+solana-sdk = ">=1.16, < 3.0"
+solana-client = ">=1.16, < 3.0"
 solana-program = ">=1.16, < 3.0"
 spl-token = { version = "=4.0.3", features = ["no-entrypoint"] }
 orca_whirlpools_client = "=4.0.0"

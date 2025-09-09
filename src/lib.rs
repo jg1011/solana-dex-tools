@@ -1,8 +1,7 @@
 //! # Dex Tools: High-Performance Solana DEX Toolkit
 //!
-//! `dex_tools` is a high-performance, thread-safe Rust library designed for developers
-//! building sophisticated, high-frequency trading (HFT) applications on the Solana blockchain.
-//! It provides a robust, generic, and highly optimized toolkit for interacting with various
+//! A thread-safe Rust library for interacting with Solana decentralized exchanges (DEXs),
+//! providing a robust, generic, and highly optimized toolkit for interacting with various
 //! decentralized exchanges (DEXs) with maximum efficiency and safety.
 //!
 //! ## Key Features

@@ -1,38 +1,18 @@
 use crate::common::{
+    account::AccountData,
     pool::Pool,
+    rpc::RpcProvider,
     state::{AccountState, ManagedAccount},
-    traits::Deserializable,
 };
 use crate::orca::pda;
 use anyhow::anyhow;
 use crate::common::types::AnyResult;
 use async_trait::async_trait;
 use orca_whirlpools_client::{Oracle, TickArray, Whirlpool};
-use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use spl_token::state::Mint;
 use std::any::Any;
 use std::sync::Arc;
-
-// --- Deserialization Trait Implementations --- //
-
-impl Deserializable for Whirlpool {
-    fn from_bytes(bytes: &[u8]) -> AnyResult<Self> {
-        Whirlpool::from_bytes(bytes).map_err(|e| anyhow!("Failed to deserialize Whirlpool: {}", e))
-    }
-}
-
-impl Deserializable for TickArray {
-    fn from_bytes(bytes: &[u8]) -> AnyResult<Self> {
-        TickArray::from_bytes(bytes).map_err(|e| anyhow!("Failed to deserialize TickArray: {}", e))
-    }
-}
-
-impl Deserializable for Oracle {
-    fn from_bytes(bytes: &[u8]) -> AnyResult<Self> {
-        Oracle::from_bytes(bytes).map_err(|e| anyhow!("Failed to deserialize Oracle: {}", e))
-    }
-}
 
 // --- Orca Whirlpool Struct Definition --- //
 
@@ -103,19 +83,17 @@ impl Pool for OrcaWhirlpool {
     /// 4. Call the `update` method on that `AccountState` object with the new bytes.
     /// This ensures the expensive deserialization happens on the "cold path"
     /// and the cache is updated atomically.
-    async fn refresh(&self, rpc_client: &RpcClient) -> AnyResult<()> {
-        let account_keys: Vec<_> = self.accounts().iter().map(|a| *a.pubkey()).collect();
-        let accounts_data = rpc_client.get_multiple_accounts(&account_keys)?;
+    async fn refresh<C: RpcProvider + Send + Sync>(&self, rpc_client: &C) -> AnyResult<()> {
+        let accounts_to_update: Vec<_> = self.accounts().iter().map(|a| *a.pubkey()).collect();
 
-        for (i, account_data) in accounts_data.iter().enumerate() {
-            if let Some(account_data) = account_data {
-                let pubkey = &account_keys[i];
-                if let Some(account_state) = self.accounts().iter().find(|a| a.pubkey() == pubkey) {
-                    // Propagate the error if the update fails. This ensures that a failed
-                    // deserialization of one account causes the entire refresh to fail,
-                    // preventing a partially updated, inconsistent pool state.
-                    account_state.update(account_data.data.clone())?;
-                }
+        let rpc_response = rpc_client.get_multiple_accounts(&accounts_to_update).await?;
+        let accounts_data = rpc_response.result;
+        let update_time = rpc_response.response_time;
+
+        for (managed_account, account_data_option) in self.accounts().into_iter().zip(accounts_data.into_iter()) {
+            if let Some(account_data) = account_data_option {
+                let bytes = account_data.into_bytes();
+                managed_account.update(bytes, update_time)?;
             }
         }
 
@@ -127,16 +105,19 @@ impl OrcaWhirlpool {
     /// Asynchronously fetches all necessary on-chain data and constructs a new `OrcaWhirlpool`.
     ///
     /// This constructor is a complex operation responsible for the initial creation of all
-    /// the `ManagedAccount` states that compose the pool.
-    pub async fn new(
+    /// the `ManagedAccount` states that compose the pool. It is generic over any `RpcProvider`.
+    pub async fn new_initialized_from_rpc<C: RpcProvider + Send + Sync>(
         pubkey: &Pubkey,
-        rpc_client: &RpcClient,
+        rpc_provider: &C,
     ) -> AnyResult<(Self, Vec<FailedAccount>)> {
         // 1. Fetch and deserialize the main whirlpool account to get necessary details
-        let whirlpool_account = rpc_client
+        let whirlpool_response = rpc_provider
             .get_account(pubkey)
+            .await
             .map_err(|e| anyhow!("Failed to fetch main whirlpool account {}: {}", pubkey, e))?;
-        let whirlpool_data = Whirlpool::from_bytes(&whirlpool_account.data)?;
+        let whirlpool_time = whirlpool_response.response_time;
+        let whirlpool_account = whirlpool_response.result;
+        let whirlpool_data = Whirlpool::from_bytes(whirlpool_account.bytes())?;
 
         // 2. Derive the addresses of all other required accounts using the custom PDA logic.
         let mut pubkeys_to_fetch = vec![
@@ -160,41 +141,61 @@ impl OrcaWhirlpool {
         let mut account_map = std::collections::HashMap::new();
         let mut failures = Vec::new();
         for chunk in pubkeys_to_fetch.chunks(100) {
-            let accounts = rpc_client.get_multiple_accounts(chunk)?;
-            for (i, account) in accounts.into_iter().enumerate() {
-                if let Some(account) = account {
-                    account_map.insert(chunk[i], account.data);
+            let rpc_response = rpc_provider.get_multiple_accounts(chunk).await?;
+            let accounts_time = rpc_response.response_time;
+            let accounts = rpc_response.result;
+            for (i, account_option) in accounts.into_iter().enumerate() {
+                if let Some(account) = account_option {
+                    // Store the data along with the timestamp
+                    account_map.insert(chunk[i], (account.bytes().to_vec(), accounts_time));
                 }
             }
         }
 
-        // quick closure to extract data from the account map 
-            // Use `remove` to transfer ownership of the data out of the map, avoiding a clone.
+        // quick closure to extract data from the account map
+        // Use `remove` to transfer ownership of the data out of the map, avoiding a clone.
         let mut get_data = |pubkey: &Pubkey| account_map.remove(pubkey);
 
         // 4. Create `ManagedAccount` instances for each piece of account data.
-        let whirlpool = Arc::new(ManagedAccount::<Whirlpool>::new(
+        let whirlpool = Arc::new(ManagedAccount::<Whirlpool>::new_initialized_from_bytes(
             *pubkey,
-            whirlpool_account.data,
+            whirlpool_account.bytes().to_vec(),
+            whirlpool_time,
         )?);
 
-        let mint_a_data = get_data(&whirlpool_data.token_mint_a)
-            .ok_or_else(|| anyhow!("Required account Mint A {} could not be fetched", whirlpool_data.token_mint_a))?;
-        let mint_a = Arc::new(ManagedAccount::<Mint>::new(
+        let (mint_a_data, mint_a_time) = get_data(&whirlpool_data.token_mint_a).ok_or_else(|| {
+            anyhow!(
+                "Required account Mint A {} could not be fetched",
+                whirlpool_data.token_mint_a
+            )
+        })?;
+        let mint_a = Arc::new(ManagedAccount::<Mint>::new_initialized_from_bytes(
             whirlpool_data.token_mint_a,
             mint_a_data,
+            mint_a_time,
         )?);
 
-        let mint_b_data = get_data(&whirlpool_data.token_mint_b)
-            .ok_or_else(|| anyhow!("Required account Mint B {} could not be fetched", whirlpool_data.token_mint_b))?;
-        let mint_b = Arc::new(ManagedAccount::<Mint>::new(
+        let (mint_b_data, mint_b_time) = get_data(&whirlpool_data.token_mint_b).ok_or_else(|| {
+            anyhow!(
+                "Required account Mint B {} could not be fetched",
+                whirlpool_data.token_mint_b
+            )
+        })?;
+        let mint_b = Arc::new(ManagedAccount::<Mint>::new_initialized_from_bytes(
             whirlpool_data.token_mint_b,
             mint_b_data,
+            mint_b_time,
         )?);
 
         let oracle = if let Some(opk) = oracle_pubkey {
-            if let Some(oracle_data) = get_data(&opk) {
-                Some(Arc::new(ManagedAccount::<Oracle>::new(opk, oracle_data)?))
+            if let Some((oracle_data, oracle_time)) = get_data(&opk) {
+                Some(Arc::new(
+                    ManagedAccount::<Oracle>::new_initialized_from_bytes(
+                        opk,
+                        oracle_data,
+                        oracle_time,
+                    )?,
+                ))
             } else {
                 failures.push(FailedAccount {
                     pubkey: opk,
@@ -208,10 +209,12 @@ impl OrcaWhirlpool {
 
         let mut tick_arrays = Vec::new();
         for ta_pubkey in &tick_arrays_pubkeys {
-            if let Some(ta_data) = get_data(ta_pubkey) {
-                tick_arrays.push(Arc::new(ManagedAccount::<TickArray>::new(
-                    *ta_pubkey, ta_data,
-                )?));
+            if let Some((ta_data, ta_time)) = get_data(ta_pubkey) {
+                tick_arrays.push(Arc::new(
+                    ManagedAccount::<TickArray>::new_initialized_from_bytes(
+                        *ta_pubkey, ta_data, ta_time,
+                    )?,
+                ));
             } else {
                 // It's expected that not all tick arrays will exist on-chain.
                 failures.push(FailedAccount {

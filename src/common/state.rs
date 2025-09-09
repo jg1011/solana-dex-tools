@@ -1,11 +1,16 @@
-use crate::common::traits::Deserializable;
-use crate::common::types::AnyResult;
+use crate::common::{
+    account::AccountData,
+    deserialize::Deserializable,
+    rpc::RpcProvider,
+    types::AnyResult,
+};
 use arc_swap::{ArcSwap, Guard};
 use solana_sdk::pubkey::Pubkey;
 use std::any::Any;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-// --- The Interface (Trait) ---
+// --- The Account Trait ---
 
 /// Defines the behaviour of a single on-chain account
 ///
@@ -16,7 +21,7 @@ pub trait AccountState: Send + Sync {
     /// Updates the account's state using a new set of raw bytes.
     ///
     /// The write operation for AccountState objects, where expensive deserialization occurs.
-    fn update(&self, new_bytes: Vec<u8>) -> AnyResult<()>;
+    fn update(&self, new_bytes: Vec<u8>, update_time: u64) -> AnyResult<()>;
 
     /// Returns the account's unique identifier, its public key.
     fn pubkey(&self) -> &Pubkey;
@@ -73,6 +78,12 @@ where
     /// 
     /// The type T is the deserialized on-chain account data, e.g. `Whirlpool` from the Orca SDK.
     deserialized: Arc<ArcSwap<T>>,
+    /// A simple counter that increments on each successful `update` call, starting at 1.
+    /// Can be used as a logical "slot" or version number to track data freshness.
+    /// A value of 0 indicates the account is uninitialized.
+    update_slot: AtomicU64,
+    /// The Unix timestamp of the last successful `update` call in nanoseconds.
+    last_update_time: AtomicU64,
 }
 
 // --- ManagedAccount Struct Implementations --- //
@@ -81,9 +92,14 @@ where
 /// `get` method, providing fast, read-only access to the deserialized data.
 impl<T: Deserializable + Clone + Send + Sync + 'static> ManagedAccount<T> {
     /// Constructs a new `ManagedAccount` from a byte array containing the on-chain data.
-    /// 
+    ///
+    /// This is a low-level constructor. Prefer `new_initialized_from_rpc` where possible.
     /// Fails if initial_bytes cannot be deserialized into `T`.
-    pub fn new(pubkey: Pubkey, initial_bytes: Vec<u8>) -> AnyResult<Self> {
+    pub fn new_initialized_from_bytes(
+        pubkey: Pubkey,
+        initial_bytes: Vec<u8>,
+        initial_time: u64,
+    ) -> AnyResult<Self> {
         // Invoke the from_bytes method from the Deserializable trait.
         let initial_deserialized = T::from_bytes(&initial_bytes)?;
         Ok(Self {
@@ -91,7 +107,29 @@ impl<T: Deserializable + Clone + Send + Sync + 'static> ManagedAccount<T> {
             // wrap the byte array and deserialized data in concurrency primitives.
             bytes: Arc::new(ArcSwap::new(Arc::new(initial_bytes))),
             deserialized: Arc::new(ArcSwap::new(Arc::new(initial_deserialized))),
+            update_slot: AtomicU64::new(1), // Initialized state is the first version
+            last_update_time: AtomicU64::new(initial_time),
         })
+    }
+
+    /// Asynchronously constructs a new, initialized `ManagedAccount` by fetching its data from an RPC provider.
+    /// This implementation is generic and works with any provider that implements RpcProvider and 
+    /// returns a type implementing `AccountData`.
+    pub async fn new_initialized_from_rpc<C: RpcProvider + Send + Sync>(
+        pubkey: Pubkey,
+        rpc_provider: &C,
+    ) -> AnyResult<Self> {
+        let response = rpc_provider.get_account(&pubkey).await?;
+        let time = response.response_time;
+        let account_data = response.result;
+        Self::new_initialized_from_bytes(pubkey, account_data.bytes().to_vec(), time)
+    }
+
+    /// Checks if the account has been populated with on-chain data.
+    ///
+    /// An account is considered initialized if its update slot is greater than 0.
+    pub fn is_initialized(&self) -> bool {
+        self.update_slot.load(Ordering::Relaxed) > 0
     }
 
     /// Provides fast, read-only access to the deserialized data.
@@ -109,15 +147,15 @@ impl<T: Deserializable + Clone + Send + Sync + 'static> ManagedAccount<T> {
 // --- AccountState Trait Implementation --- //
 
 impl<T: Deserializable + Clone + Send + Sync + 'static> AccountState for ManagedAccount<T> {
-    fn update(&self, new_bytes: Vec<u8>) -> AnyResult<()> {
-        // Attempt the expensive deserialization, aborting with ? if it fails. This 
-        // uses anyhow under the hood. 
+    fn update(&self, new_bytes: Vec<u8>, update_time: u64) -> AnyResult<()> {
+        // Attempt the expensive deserialization, aborting with ? if it fails. 
         let new_deserialized = T::from_bytes(&new_bytes)?;
-        
-        // If successful, atomically update raw bytes and deserialized data with 
-        // ArcSwap's store operation. Simple ptr swap, no cloning or copying.
+
+        // If successful, atomically update raw bytes, deserialized data, and metadata.
         self.bytes.store(Arc::new(new_bytes));
         self.deserialized.store(Arc::new(new_deserialized));
+        self.update_slot.fetch_add(1, Ordering::Relaxed);
+        self.last_update_time.store(update_time, Ordering::Relaxed);
         Ok(())
     }
 
