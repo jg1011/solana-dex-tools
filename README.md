@@ -17,7 +17,7 @@ This crate is ideal for:
 ## Key Features
 
 -   **Unified DEX Abstraction:** Generic `Pool` and `AccountState` traits create a standardized interface for different DEX implementations.
--   **High-Performance State Management:** ArcSwap allows ManagedAccount instances to be updated atomically without cloning or copying.
+-   **High-Performance State Management:** `ArcSwap` allows `ManagedAccount` instances to be updated atomically without cloning or copying.
 -   **Thread-Safe by Design:** State management is built on thread-safe primitives like `Arc` and `ArcSwap`, allowing `Pool` and `ManagedAccount` data to be safely shared, read, and updated across multiple threads.
 
 ## Future Aspirations

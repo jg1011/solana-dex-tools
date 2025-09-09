@@ -4095,7 +4095,7 @@ dependencies = [
 
 [[package]]
 name = "solana_dex_tools"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4105,7 +4105,7 @@ dependencies = [
  "orca_whirlpools_client",
  "orca_whirlpools_core",
  "solana-client",
- "solana-program 2.0.25",
+ "solana-program 1.18.26",
  "solana-sdk",
  "spl-token 4.0.3",
 ]
