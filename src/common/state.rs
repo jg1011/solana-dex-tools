@@ -1,5 +1,5 @@
 use crate::common::traits::Deserializable;
-use anyhow::{Result};
+use crate::common::types::AnyResult;
 use arc_swap::{ArcSwap, Guard};
 use solana_sdk::pubkey::Pubkey;
 use std::any::Any;
@@ -16,7 +16,7 @@ pub trait AccountState: Send + Sync {
     /// Updates the account's state using a new set of raw bytes.
     ///
     /// The write operation for AccountState objects, where expensive deserialization occurs.
-    fn update(&self, new_bytes: Vec<u8>) -> Result<()>;
+    fn update(&self, new_bytes: Vec<u8>) -> AnyResult<()>;
 
     /// Returns the account's unique identifier, its public key.
     fn pubkey(&self) -> &Pubkey;
@@ -83,7 +83,7 @@ impl<T: Deserializable + Clone + Send + Sync + 'static> ManagedAccount<T> {
     /// Constructs a new `ManagedAccount` from a byte array containing the on-chain data.
     /// 
     /// Fails if initial_bytes cannot be deserialized into `T`.
-    pub fn new(pubkey: Pubkey, initial_bytes: Vec<u8>) -> Result<Self> {
+    pub fn new(pubkey: Pubkey, initial_bytes: Vec<u8>) -> AnyResult<Self> {
         // Invoke the from_bytes method from the Deserializable trait.
         let initial_deserialized = T::from_bytes(&initial_bytes)?;
         Ok(Self {
@@ -109,7 +109,7 @@ impl<T: Deserializable + Clone + Send + Sync + 'static> ManagedAccount<T> {
 // --- AccountState Trait Implementation --- //
 
 impl<T: Deserializable + Clone + Send + Sync + 'static> AccountState for ManagedAccount<T> {
-    fn update(&self, new_bytes: Vec<u8>) -> Result<()> {
+    fn update(&self, new_bytes: Vec<u8>) -> AnyResult<()> {
         // Attempt the expensive deserialization, aborting with ? if it fails. This 
         // uses anyhow under the hood. 
         let new_deserialized = T::from_bytes(&new_bytes)?;

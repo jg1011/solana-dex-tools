@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::common::types::AnyResult;
 
 /// A local trait to provide a generic interface for deserialization.
 ///
@@ -16,5 +16,5 @@ use anyhow::Result;
 /// via e.g. bytemuck. 
 pub trait Deserializable: Sized {
     /// Constructs an instance of `Self` from a byte slice.
-    fn from_bytes(bytes: &[u8]) -> Result<Self>;
+    fn from_bytes(bytes: &[u8]) -> AnyResult<Self>;
 }

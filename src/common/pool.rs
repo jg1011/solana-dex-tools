@@ -1,5 +1,5 @@
 use crate::common::state::AccountState;
-use anyhow::Result;
+use crate::common::types::AnyResult;
 use async_trait::async_trait;
 use solana_client::rpc_client::RpcClient;
 use std::any::Any;
@@ -32,5 +32,5 @@ pub trait Pool: Send + Sync {
     /// 
     /// We recommend using the RpcClient::get_multiple_accounts method to fetch all required 
     /// account data, which works for up to 100 accounts at a time, on implementation.
-    async fn refresh(&self, rpc_client: &RpcClient) -> Result<()>;
+    async fn refresh(&self, rpc_client: &RpcClient) -> AnyResult<()>;
 }

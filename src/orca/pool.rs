@@ -4,7 +4,8 @@ use crate::common::{
     traits::Deserializable,
 };
 use crate::orca::pda;
-use anyhow::{anyhow, Result};
+use anyhow::anyhow;
+use crate::common::types::AnyResult;
 use async_trait::async_trait;
 use orca_whirlpools_client::{Oracle, TickArray, Whirlpool};
 use solana_client::rpc_client::RpcClient;
@@ -16,19 +17,19 @@ use std::sync::Arc;
 // --- Deserialization Trait Implementations --- //
 
 impl Deserializable for Whirlpool {
-    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+    fn from_bytes(bytes: &[u8]) -> AnyResult<Self> {
         Whirlpool::from_bytes(bytes).map_err(|e| anyhow!("Failed to deserialize Whirlpool: {}", e))
     }
 }
 
 impl Deserializable for TickArray {
-    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+    fn from_bytes(bytes: &[u8]) -> AnyResult<Self> {
         TickArray::from_bytes(bytes).map_err(|e| anyhow!("Failed to deserialize TickArray: {}", e))
     }
 }
 
 impl Deserializable for Oracle {
-    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+    fn from_bytes(bytes: &[u8]) -> AnyResult<Self> {
         Oracle::from_bytes(bytes).map_err(|e| anyhow!("Failed to deserialize Oracle: {}", e))
     }
 }
@@ -102,7 +103,7 @@ impl Pool for OrcaWhirlpool {
     /// 4. Call the `update` method on that `AccountState` object with the new bytes.
     /// This ensures the expensive deserialization happens on the "cold path"
     /// and the cache is updated atomically.
-    async fn refresh(&self, rpc_client: &RpcClient) -> Result<()> {
+    async fn refresh(&self, rpc_client: &RpcClient) -> AnyResult<()> {
         let account_keys: Vec<_> = self.accounts().iter().map(|a| *a.pubkey()).collect();
         let accounts_data = rpc_client.get_multiple_accounts(&account_keys)?;
 
@@ -130,7 +131,7 @@ impl OrcaWhirlpool {
     pub async fn new(
         pubkey: &Pubkey,
         rpc_client: &RpcClient,
-    ) -> Result<(Self, Vec<FailedAccount>)> {
+    ) -> AnyResult<(Self, Vec<FailedAccount>)> {
         // 1. Fetch and deserialize the main whirlpool account to get necessary details
         let whirlpool_account = rpc_client
             .get_account(pubkey)

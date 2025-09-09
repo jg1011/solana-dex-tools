@@ -1,10 +1,9 @@
 /// crates/dex_tools/src/orca/pda.rs ///
 
 use solana_sdk::pubkey::Pubkey;
+use crate::common::types::AnyResult;
 use std::str::FromStr;
-use anyhow::{
-    anyhow, Result
-};
+use anyhow::anyhow;
 use orca_whirlpools_core::{
     TICK_ARRAY_SIZE, 
 };
@@ -53,7 +52,7 @@ pub fn parse_whirlpool_master_pubkey() -> Pubkey {
 pub fn get_tick_array_addresses(
     whirlpool_pubkey: &Pubkey,
     tick_spacing: &u16,
-) -> Result<Vec<Pubkey>> {
+) -> AnyResult<Vec<Pubkey>> {
     let abs_max_tick_idx: i32 = 443636;
     let tick_array_width: i32 = TICK_ARRAY_SIZE as i32 * *tick_spacing as i32;
     let mut tick_array_pubkeys: Vec<Pubkey> = Vec::new();
@@ -84,7 +83,7 @@ pub fn get_tick_array_addresses(
 /// 
 /// Returns: 
 ///     - A tuple containing the oracle's pubkey and the discriminant or an (anyhow)error
-pub fn get_oracle_address(pool_pubkey: &Pubkey) -> Result<(Pubkey, u8)> {
+pub fn get_oracle_address(pool_pubkey: &Pubkey) -> AnyResult<(Pubkey, u8)> {
     let seeds = &[b"oracle", pool_pubkey.as_ref()];
     let whirlpool_master_pubkey: Pubkey = parse_whirlpool_master_pubkey(); 
     let oracle_address_result:Option<(Pubkey, u8)> =  Pubkey::try_find_program_address(
@@ -112,7 +111,7 @@ pub fn get_oracle_address(pool_pubkey: &Pubkey) -> Result<(Pubkey, u8)> {
 pub fn get_tick_array_address(
     pool_pubkey: &Pubkey,
     start_tick_index: i32,
-) -> Result<Pubkey> {
+) -> AnyResult<Pubkey> {
     let start_tick_index_str = start_tick_index.to_string();
     let seeds = &[
         b"tick_array",
