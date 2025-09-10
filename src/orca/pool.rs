@@ -49,6 +49,10 @@ impl Pool for OrcaWhirlpool {
     /// We implement for the standard `solana-sdk::account::Account` type.
     type AccountType = Account;
 
+    fn pubkey(&self) -> &Pubkey {
+        self.whirlpool.pubkey()
+    }
+
     /// Gathers and returns `Arc` pointers to all the underlying `AccountState` objects for the pool.
     ///
     /// This method is crucial for the trait object system. It "erases" the concrete types
