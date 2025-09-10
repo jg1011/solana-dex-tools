@@ -1,5 +1,5 @@
 //! Provides a default implementation of the `RpcProvider` trait for the
-//! standard non-blocking `solana-client`.
+//! standard non-blocking `solana-client` with the solana_sdk::account::Account type.
 use crate::common::{
     rpc::{RpcProvider, RpcResponse},
     types::AnyResult,
@@ -49,5 +49,9 @@ impl RpcProvider for RpcClient {
             result,
             response_time,
         })
+    }
+
+    fn max_accounts_per_rpc_call(&self) -> usize {
+        100
     }
 }

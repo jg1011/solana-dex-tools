@@ -19,7 +19,7 @@ pub struct RpcResponse<T> {
 /// This trait is generic over the specific account type, allowing consumers of
 /// this library to use alternative account data structures if needed.
 #[async_trait]
-pub trait RpcProvider {
+pub trait RpcProvider: Send + Sync {
     /// The concrete type this RPC client returns for an account.
     /// Must implement the `AccountData` trait.
     type AccountType: AccountData + Send + Sync;
@@ -35,4 +35,6 @@ pub trait RpcProvider {
         &self,
         pubkeys: &[Pubkey],
     ) -> AnyResult<RpcResponse<Vec<Option<Self::AccountType>>>>;
+
+    fn max_accounts_per_rpc_call(&self) -> usize;
 }

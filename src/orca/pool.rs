@@ -10,6 +10,7 @@ use crate::common::types::AnyResult;
 use async_trait::async_trait;
 use orca_whirlpools_client::{Oracle, TickArray, Whirlpool};
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::account::Account;
 use spl_token::state::Mint;
 use std::any::Any;
 use std::sync::Arc;
@@ -45,6 +46,9 @@ pub struct FailedAccount {
 
 #[async_trait]
 impl Pool for OrcaWhirlpool {
+    /// We implement for the standard `solana-sdk::account::Account` type.
+    type AccountType = Account;
+
     /// Gathers and returns `Arc` pointers to all the underlying `AccountState` objects for the pool.
     ///
     /// This method is crucial for the trait object system. It "erases" the concrete types
@@ -83,7 +87,7 @@ impl Pool for OrcaWhirlpool {
     /// 4. Call the `update` method on that `AccountState` object with the new bytes.
     /// This ensures the expensive deserialization happens on the "cold path"
     /// and the cache is updated atomically.
-    async fn refresh<C: RpcProvider + Send + Sync>(&self, rpc_client: &C) -> AnyResult<()> {
+    async fn refresh(&self, rpc_client: &dyn RpcProvider<AccountType = Self::AccountType>) -> AnyResult<()> {
         let accounts_to_update: Vec<_> = self.accounts().iter().map(|a| *a.pubkey()).collect();
 
         let rpc_response = rpc_client.get_multiple_accounts(&accounts_to_update).await?;
@@ -105,7 +109,11 @@ impl OrcaWhirlpool {
     /// Asynchronously fetches all necessary on-chain data and constructs a new `OrcaWhirlpool`.
     ///
     /// This constructor is a complex operation responsible for the initial creation of all
-    /// the `ManagedAccount` states that compose the pool. It is generic over any `RpcProvider`.
+    /// the `ManagedAccount` states that compose the pool. It is generic over any `RpcProvider` 
+    /// instance further over any AccountData instance, providing maximal generality. 
+    /// 
+    /// Note: For refresh we still need to specify the AccountType, so this isn't much of a 
+    /// win outside, perhaps, for new pool sniping.
     pub async fn new_initialized_from_rpc<C: RpcProvider + Send + Sync>(
         pubkey: &Pubkey,
         rpc_provider: &C,
@@ -137,10 +145,11 @@ impl OrcaWhirlpool {
         pubkeys_to_fetch.extend_from_slice(&tick_arrays_pubkeys);
 
         // 3. Perform a single, parallel `get_multiple_accounts` RPC call.
-            // The RPC call has a limit of 100 accounts, so we chunk into 100 accounts.
         let mut account_map = std::collections::HashMap::new();
         let mut failures = Vec::new();
-        for chunk in pubkeys_to_fetch.chunks(100) {
+        let limit = rpc_provider.max_accounts_per_rpc_call();
+        // iterate over chunks of maximal size, minimising the number of RPC calls.
+        for chunk in pubkeys_to_fetch.chunks(limit) {
             let rpc_response = rpc_provider.get_multiple_accounts(chunk).await?;
             let accounts_time = rpc_response.response_time;
             let accounts = rpc_response.result;
