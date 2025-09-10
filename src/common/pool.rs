@@ -1,3 +1,5 @@
+//! Defines the behaviour of a liquidity pool. 
+
 use crate::common::{
     account::AccountData,
     rpc::RpcProvider,

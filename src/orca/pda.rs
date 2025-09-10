@@ -1,4 +1,4 @@
-/// crates/dex_tools/src/orca/pda.rs ///
+//! Handles logic for address derivation for associated accounts to a whirlpool account.
 
 use solana_sdk::pubkey::Pubkey;
 use crate::common::types::AnyResult;
@@ -42,13 +42,6 @@ pub fn parse_whirlpool_master_pubkey() -> Pubkey {
 /// Note: Many of these tick arrays are uninitialized, but theres no way to check without 
 /// an RPC call. We begin by trying all, and it's reasonable to assume any that failed 
 /// are simply uninitialized.
-/// 
-/// Parameters: 
-///     - pool_pubkey: Pointer to the pool's pubkey
-///     - tick_spacing: A pointer to the space between ticks, pool dependent
-/// 
-/// Returns: 
-///     - A vector of Pubkeys if successful, otherwise an (anyhow) error
 pub fn get_tick_array_addresses(
     whirlpool_pubkey: &Pubkey,
     tick_spacing: &u16,
@@ -69,20 +62,14 @@ pub fn get_tick_array_addresses(
     Ok(tick_array_pubkeys)
 }
 
-/// Given a whirlpool pubkey, returns the corresponding oracle pubkey 
+/// Given a whirlpool pubkey, returns the corresponding oracle pubkey. 
 /// 
 /// Note oracle usually doesn't exist, only for new variable fee pools. We get the 
-/// same error whether there was an issue or no oracle pubkey 
+/// same error whether there was an issue or no oracle pubkey.
 /// 
 /// TODO:
-///     - seperate errors for failing and for no pubkey
+///     - seperate errors for failing and for no pubkey (???)
 ///     - remove irrelevant discriminant, applying necessary refactor to OrcaWhirlpool::new impl
-/// 
-/// Parameters: 
-///     - pool_pubkey: Pointer to the pool's pubkey
-/// 
-/// Returns: 
-///     - A tuple containing the oracle's pubkey and the discriminant or an (anyhow)error
 pub fn get_oracle_address(pool_pubkey: &Pubkey) -> AnyResult<(Pubkey, u8)> {
     let seeds = &[b"oracle", pool_pubkey.as_ref()];
     let whirlpool_master_pubkey: Pubkey = parse_whirlpool_master_pubkey(); 
@@ -97,17 +84,9 @@ pub fn get_oracle_address(pool_pubkey: &Pubkey) -> AnyResult<(Pubkey, u8)> {
 
 /// Given a whirlpool pubkey and a start tick index, derives the corresponding tick array pubkey.
 /// 
-/// Methodology given in orca rust sdk, we just minorly adapt their code here. 
-///     - By minorly adapt, I mean we just swap program pubkeys for sdk pubkeys
+/// This is just a minor adaption of the orca rust sdk code.
 /// 
 /// NOTE: If start_tick_index is invalid, we still get a tick array pubkey
-/// 
-/// Parameters: 
-///     - pool_pubkey: Pointer to the pool's pubkey
-///     - start_tick_index: The first tick in the tick array
-/// 
-/// Returns: 
-///     - The tick array's pubkey or an (anyhow) error
 pub fn get_tick_array_address(
     pool_pubkey: &Pubkey,
     start_tick_index: i32,

@@ -1,3 +1,5 @@
+//! Defines the deserialization of the Mint account into the spl_token::state::Mint type.
+
 use crate::common::{deserialize::Deserializable, types::AnyResult};
 use anyhow::anyhow;
 use spl_token::{

@@ -1,3 +1,5 @@
+//! Convenient type aliases live here.
+
 use anyhow::Result;
 
 /// quick alias for anyhow::Result, avoids confusion with std::result::Result

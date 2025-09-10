@@ -2,17 +2,18 @@
 
 ## 1 - Mission Statement
 
-`solana-dex-tools` is a high-performance, thread-safe, generic Rust library designed for developers building sophisticated, high-frequency-trading (HFT) applications on the Solana blockchain. We provide utilities to use the `solana-sdk` and `tokio` ecosystems, but we do not force users seeking more specialised toolkits into this workflow. 
+`solana-dex-tools` is a high-performance, thread-safe, generic Rust library designed for developers building sophisticated high-frequency-trading (HFT) applications on the Solana blockchain. We provide utilities to use the `solana-sdk` and `tokio` ecosystems, but consumers using specialised toolkits are given the freedom to do so with our abstractions.
 
 ## 2 - Core Purpose & Use Case
 
 In the world of high-frequency trading, every microsecond counts. Applications must manage real-time data from multiple sources concurrently without compromising state integrity. `solana_dex_tools` is engineered from the ground up to solve this problem.
 
 This crate is ideal for:
--   **Arbitrage Bots:** Concurrently monitor multiple liquidity pools across several DEXs to identify and execute profitable arbitrage opportunities.
--   **Market Making:** Receive websocket streams with live order-book data across several DEXs, giving full information for the optimal liquidity provisioning problem.
+-   **High Frequency Trading Firms** Our architecture is liberating enough to utilise internal sockets (e.g. a local validator), data structures and hardware optimisations all within our ecosystem. We also provide blanket implementations for the `solana-sdk` data structures and `solana-client` rpc client for the casual user. Further, our thread-safe architecture is well suited to running several algorithmic trading strategies from one central server, minimising data-execution latency. 
+-   **Arbitrage Bots:** Easily monitor multiple hundreds of liquidity pools across several DEXs to identify arbitrage opportunities.
+-   **Market Making:** Receive websocket streams with live order-book data across several DEXs, aiding in solving the optimal liquidity provisioning problem.
 -   **Data Analytics Platforms:** Ingest and process all sorts of real-time on-chain DEX data with high throughput.
--   **High Frequency Trading Firms** Our architecture is liberating enough to utilise internal sockets, data structures, and notions of a liquidity pool within our ecosystem, allowing for optimisation beyond the solana-sdk toolkit and our blanket implementations. Particularly, our thread-safe architecture is well suited to running several algorithmic trading strategies from one central server, minimising data-execution latency, and using custom sockets (e.g. a local validator) to obtain byte-stream data with minimal latency. 
+
 
 ## 3 - Key Features
 

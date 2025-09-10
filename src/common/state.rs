@@ -1,3 +1,5 @@
+//! Defines the behaviour of a single on-chain account.
+
 use crate::common::{
     account::AccountData,
     deserialize::Deserializable,
@@ -10,17 +12,17 @@ use std::any::Any;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-// --- The Account Trait ---
+// --- The Account Trait --- //
 
-/// Defines the behaviour of a single on-chain account
-///
-/// This trait is "object-safe", meaning we can create pointers to this abstract type 
-/// (like `Arc<dyn AccountState>`). Note size not known at compile time (vtable created) 
-/// at compile time), so Arc wrapper necessary even in single-threaded applications.
+/// The behaviour of a single on-chain account, which is implemented for 
+/// the blanket type `ManagedAccount<T>`. 
+/// 
+/// Note this trait is object-safe, so we can utilise dyn. 
 pub trait AccountState: Send + Sync {
     /// Updates the account's state using a new set of raw bytes.
     ///
-    /// The write operation for AccountState objects, where expensive deserialization occurs.
+    /// This is expensive, a singular linear clone cost is incurred in the size of 
+    /// the byte array. 
     fn update(&self, new_bytes: Vec<u8>, update_time: u64) -> AnyResult<()>;
 
     /// Returns the account's unique identifier, its public key.
@@ -28,16 +30,11 @@ pub trait AccountState: Send + Sync {
 
     /// Provides read-only access to the raw byte data.
     ///
-    /// The return type `Guard<Arc<Vec<u8>>>` is a "guard" from `arc-swap`. It acts as a
-    /// temporary, atomic snapshot of the data. This is a fast (nanoseconds) operation, 
-    /// and does not block concurrent `update` calls.
+    /// The return type `Guard<Arc<Vec<u8>>>` is a "guard" from `arc-swap`, 
+    /// guarding the arc ptr to the byte data. 
     fn bytes(&self) -> Guard<Arc<Vec<u8>>>;
 
-    /// Allows for runtime downcasting.
-    ///
-    /// This is a mechanism to safely convert the abstract trait object (`&dyn AccountState`)
-    /// back into its original, concrete struct type (e.g., `&ManagedAccount<Whirlpool>`).
-    /// This is necessary to access the cached, deserialized data. 
+    /// Allows for runtime downcasting to the concrete type, e.g. `&ManagedAccount<Whirlpool>`.
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -61,28 +58,14 @@ where
     /// The public key of the account.
     pubkey: Pubkey,
     /// The raw byte data, wrapped in concurrency primitives.
-    /// 
-    /// ArcSwap is a thread-safe, atomic swap operation, allowing for near-instant 
-    /// lock-free updates. Swapping data done by swapping ptrs. Note the full byte 
-    /// array must be stored seperately for updates, we do NOT write to the bytes field.
-    /// Under the hood, ArcSwap is a ptr to an Arc, which is a ptr to a Vec<u8>. We then
-    /// wrap in an Arc to allow for multiple threads to have access to the ArcSwap ptr. 
     bytes: Arc<ArcSwap<Vec<u8>>>,
     /// The deserialized, data, wrapped in concurrency primitives.
     /// 
-    /// ArcSwap is a thread-safe, atomic swap operation, allowing for near-instant 
-    /// lock-free updates. Swapping data done by swapping ptrs. Note the full byte 
-    /// array must be stored seperately for updates, we do NOT write to the bytes field.
-    /// Under the hood, ArcSwap is a ptr to an Arc, which is a ptr to a Vec<u8>. We then
-    /// wrap in an Arc to allow for multiple threads to have access to the ArcSwap ptr.
-    /// 
     /// The type T is the deserialized on-chain account data, e.g. `Whirlpool` from the Orca SDK.
     deserialized: Arc<ArcSwap<T>>,
-    /// A simple counter that increments on each successful `update` call, starting at 1.
-    /// Can be used as a logical "slot" or version number to track data freshness.
-    /// A value of 0 indicates the account is uninitialized.
+    /// A simple counter that increments on each successful `update` call.
     update_slot: AtomicU64,
-    /// The Unix timestamp of the last successful `update` call in nanoseconds.
+    /// The Unix nanoseconds timestamp of the last successful `update` call
     last_update_time: AtomicU64,
 }
 
@@ -135,11 +118,11 @@ impl<T: Deserializable + Clone + Send + Sync + 'static> ManagedAccount<T> {
     /// Provides fast, read-only access to the deserialized data.
     ///
     /// Guard is a RAII pattern. The destructor will be called when the guard goes out of scope.
+    /// 
     /// Guard also implements the Deref trait, as does Arc, so we can just reference a field 
-    /// like, for example, `let liquidity = self.get().liquidity`.
+    /// directly, e.g. `let liquidity = self.get().liquidity`.
     pub fn get(&self) -> Guard<Arc<T>> {
-        // Load returns a guarded arc ptr to the deserialized data, essentially dereferencing 
-        // the outer Arc.
+        // Load returns a guarded arc ptr to the deserialized data
         self.deserialized.load()
     }
 }
@@ -154,6 +137,7 @@ impl<T: Deserializable + Clone + Send + Sync + 'static> AccountState for Managed
         // If successful, atomically update raw bytes, deserialized data, and metadata.
         self.bytes.store(Arc::new(new_bytes));
         self.deserialized.store(Arc::new(new_deserialized));
+        // We use the fetch_add and store methods for u64 to ensure atomicity is preserved across threads.
         self.update_slot.fetch_add(1, Ordering::Relaxed);
         self.last_update_time.store(update_time, Ordering::Relaxed);
         Ok(())
@@ -164,6 +148,7 @@ impl<T: Deserializable + Clone + Send + Sync + 'static> AccountState for Managed
     }
 
     fn bytes(&self) -> Guard<Arc<Vec<u8>>> {
+         // Load returns a guarded arc ptr to the deserialized data.
         self.bytes.load()
     }
 

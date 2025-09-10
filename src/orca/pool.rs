@@ -1,3 +1,5 @@
+//! Defines the `OrcaWhirlpool` struct and implements the `Pool` trait for it.
+
 use crate::common::{
     account::AccountData,
     pool::Pool,
@@ -17,18 +19,8 @@ use std::sync::Arc;
 
 // --- Orca Whirlpool Struct Definition --- //
 
-/// A struct representing a complete Orca Whirlpool.
-///
-/// This struct is not the state itself. Instead, it is a lightweight, logical grouping
-/// of `Arc` pointers. An `Arc` (Atomically Reference Counted) pointer is a "smart pointer"
-/// that allows multiple parts of the program to share ownership of the same piece of data
-/// on the heap without needing to copy the data.
-///
-/// Each field points to a `ManagedAccount<T>`, where `T` is the specific deserialized
-/// type for that part of the pool (e.g., `Whirlpool`, `TickArray`). This `OrcaWhirlpool`
-/// acts as a convenient, type-safe "view" into the global state map.
+/// The logical collection of `ManagedAccount`s that define an Orca Whirlpool.
 pub struct OrcaWhirlpool {
-    // Each field is a thread-safe, shared pointer to a managed account state.
     pub whirlpool: Arc<ManagedAccount<Whirlpool>>,
     pub tick_arrays: Vec<Arc<ManagedAccount<TickArray>>>,
     // An `Option` is used because not all pools have an oracle account.
@@ -37,28 +29,35 @@ pub struct OrcaWhirlpool {
     pub mint_b: Arc<ManagedAccount<Mint>>,
 }
 
-/// A struct to hold information about an account that failed to be fetched.
+/// Holds information about an account that failed to be fetched. 
+/// 
+/// This could be expanded to hold more information, and could be done 
+/// better with an enum instead of a string. Was just a quick hack for testing.
 #[derive(Debug)]
 pub struct FailedAccount {
     pub pubkey: Pubkey,
     pub account_type: String,
 }
 
+/// Implements the `Pool` trait for the `OrcaWhirlpool` struct with the 
+/// account type set to the standard `solana-sdk::account::Account` type. 
+/// 
+/// CRUCIAL NOTE: If you desire to use this logic for your own account type, it must be 
+/// reimplemented. Thankfully, if your account has the `AccountData` trait, this implementation 
+/// can be reused pretty much exactly!
 #[async_trait]
 impl Pool for OrcaWhirlpool {
     /// We implement for the standard `solana-sdk::account::Account` type.
     type AccountType = Account;
 
+    /// Returns the pubkey of the pool, which is the pubkey of the whirlpool account.
     fn pubkey(&self) -> &Pubkey {
         self.whirlpool.pubkey()
     }
 
-    /// Gathers and returns `Arc` pointers to all the underlying `AccountState` objects for the pool.
+    /// Gathers `Arc` pointers to all accounts in the pool as `AccountState` objects for the pool.
     ///
-    /// This method is crucial for the trait object system. It "erases" the concrete types
-    /// (e.g., `ManagedAccount<Whirlpool>`) and returns a list of the abstract `dyn AccountState`
-    /// type. This allows generic code to operate on all accounts in the pool without knowing
-    /// what kind of accounts they are.
+    /// Allows for generic operations on all accounts in the pool without knowing their concrete types. 
     fn accounts(&self) -> Vec<Arc<dyn AccountState>> {
         let mut accounts: Vec<Arc<dyn AccountState>> = vec![
             self.whirlpool.clone(),
@@ -76,21 +75,22 @@ impl Pool for OrcaWhirlpool {
         accounts
     }
 
-    /// Provides a way to downcast the `&dyn Pool` trait object back to a concrete `&OrcaWhirlpool`.
+    /// Downcasts the `&dyn Pool` trait object back to a concrete `&OrcaWhirlpool`.
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    /// Triggers a refresh of all accounts in the pool.
-    ///
-    /// The implementation will:
-    /// 1. Collect all pubkeys from the `self.accounts()` vector.
-    /// 2. Make a single, parallel `get_multiple_accounts` RPC call.
-    /// 3. For each returned account data, find the corresponding `AccountState`
-    ///    object in the `self.accounts()` vector.
-    /// 4. Call the `update` method on that `AccountState` object with the new bytes.
-    /// This ensures the expensive deserialization happens on the "cold path"
-    /// and the cache is updated atomically.
+    /// Triggers a refresh of the accounts that define the OrcaWhirlpool instance.
+    /// 
+    /// We invoke the `get_multiple_accounts` RPC method, which is confirmed by the RpcProvider trait here. 
+    /// 
+    /// NOTE: Your implementation of get_multiple_accounts must work for large numbers of accounts for this 
+    /// to be safe. Our implementation for the Solana sdk's `RpcClient` type works for n accounts by batching 
+    /// into chunks of size `max_accounts_per_rpc_call`, which in their case is 100. I recommend you do the same.
+    /// 
+    /// NOTE: Your get_multiple_accounts implementation must also be order preserving, otherwise the zip is nonsensical. 
+    /// For non-order preserving RpcProviders, you will need a new implementation. But the Orphan rule will get you here. 
+    /// If this niche case ever arrives, email me! I'll see what I can do. 
     async fn refresh(&self, rpc_client: &dyn RpcProvider<AccountType = Self::AccountType>) -> AnyResult<()> {
         let accounts_to_update: Vec<_> = self.accounts().iter().map(|a| *a.pubkey()).collect();
 
@@ -110,19 +110,22 @@ impl Pool for OrcaWhirlpool {
 }
 
 impl OrcaWhirlpool {
-    /// Asynchronously fetches all necessary on-chain data and constructs a new `OrcaWhirlpool`.
-    ///
-    /// This constructor is a complex operation responsible for the initial creation of all
-    /// the `ManagedAccount` states that compose the pool. It is generic over any `RpcProvider` 
-    /// instance further over any AccountData instance, providing maximal generality. 
+    /// Asynchronously fetches all the necessary on-chain data and constructs a new `OrcaWhirlpool` instance. 
     /// 
-    /// Note: For refresh we still need to specify the AccountType, so this isn't much of a 
-    /// win outside, perhaps, for new pool sniping.
+    /// Note: We don't actually require you to specify the account type associated with the RpcProvider for this implementation. But, for 
+    /// the refresh implementation we still need to specify the account type, so this isn't much of a win outside, perhaps, for sniping new pools.
+    /// 
+    /// Note: We pay an additional rpc call here, along with a small clone cost. This is as we need the deserialized whirlpool data 
+    /// to derive the addresses of all the associated accounts. Not a huge deal, we run this once in a pool's lifetime, but its worth 
+    /// keeping in mind for snipers. There seems to be no real way to avoid this, I even asked the Orca devs!
+    /// 
+    /// Note: This time we don't require you to implement get_multiple_accounts for n accounts, we only require it work for the 
+    /// maximal number in one call. We do the batching ourselves. This is just legacy code I don't fancy replacing, and may change 
+    /// if I think of a reason its slower. Again, this runs once in a pool's lifetime, so not a huge deal.
     pub async fn new_initialized_from_rpc<C: RpcProvider + Send + Sync>(
         pubkey: &Pubkey,
         rpc_provider: &C,
     ) -> AnyResult<(Self, Vec<FailedAccount>)> {
-        // 1. Fetch and deserialize the main whirlpool account to get necessary details
         let whirlpool_response = rpc_provider
             .get_account(pubkey)
             .await
@@ -131,7 +134,6 @@ impl OrcaWhirlpool {
         let whirlpool_account = whirlpool_response.result;
         let whirlpool_data = Whirlpool::from_bytes(whirlpool_account.bytes())?;
 
-        // 2. Derive the addresses of all other required accounts using the custom PDA logic.
         let mut pubkeys_to_fetch = vec![
             whirlpool_data.token_mint_a,
             whirlpool_data.token_mint_b,
@@ -148,7 +150,6 @@ impl OrcaWhirlpool {
             pda::get_tick_array_addresses(pubkey, &whirlpool_data.tick_spacing)?;
         pubkeys_to_fetch.extend_from_slice(&tick_arrays_pubkeys);
 
-        // 3. Perform a single, parallel `get_multiple_accounts` RPC call.
         let mut account_map = std::collections::HashMap::new();
         let mut failures = Vec::new();
         let limit = rpc_provider.max_accounts_per_rpc_call();
@@ -169,7 +170,8 @@ impl OrcaWhirlpool {
         // Use `remove` to transfer ownership of the data out of the map, avoiding a clone.
         let mut get_data = |pubkey: &Pubkey| account_map.remove(pubkey);
 
-        // 4. Create `ManagedAccount` instances for each piece of account data.
+        // Create `ManagedAccount` instances for each piece of account data via the new_initialized_from_bytes method.
+
         let whirlpool = Arc::new(ManagedAccount::<Whirlpool>::new_initialized_from_bytes(
             *pubkey,
             whirlpool_account.bytes().to_vec(),
